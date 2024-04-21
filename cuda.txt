@@ -1,0 +1,167 @@
+%%writefile fractalCompression.cu
+//!sudo apt-get install libopencv-dev build-essential
+#include <stdio.h>
+#include <stdlib.h>
+#include <cuda_runtime.h>
+#include <opencv2/opencv.hpp>
+#include <cmath>
+#include<ctime>
+using namespace std;
+using namespace cv;
+
+#define N 128
+#define THREADS_PER_BLOCK 16
+
+using namespace std;
+
+
+void {
+  FILE *file = fopen(filename, "rb");
+    if (!file) {
+        fprintf(stderr, "Error opening file %s\n", filename);
+        exit(1);
+    }
+
+    // Read image width and height from file headers
+    fseek(file, 18, SEEK_SET); // Move to width and height bytes
+    fread(width, sizeof(int), 1, file);
+    fread(height, sizeof(int), 1, file);
+
+    // Read image pixel data
+    fseek(file, 54, SEEK_SET); // Move to pixel data
+    for (int y = 0; y < *height; y++) {
+        for (int x = 0; x < *width; x++) {
+            // Read RGB values for each pixel
+            fread(&image[y][x][2], 1, 1, file); // Blue channel
+            fread(&image[y][x][1], 1, 1, file); // Green channel
+            fread(&image[y][x][0], 1, 1, file); // Red channel
+        }
+    }
+
+    fclose(file);
+}
+
+
+void resizeAndStoreImage(const string& filename, int width, int height) {
+
+    Mat image = imread(filename);
+
+    if (image.empty()) {
+        cerr << "Error: Could not open or find the image" <<endl;
+        return;
+    }
+
+    // Resize the image to the desired dimensions
+    Mat resizedImage;
+    resize(image, resizedImage, Size(width, height));
+
+    // Convert the resized image to grayscale
+    cvtColor(resizedImage, resizedImage, COLOR_BGR2GRAY);
+
+    // Store pixel values in the array
+    for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < width; ++j) {
+            img[i][j] = resizedImage.at<uchar>(i, j);
+        }
+    }
+    cout << "Image has been resized and stored in a 2D array." << std::endl;
+}
+
+
+// Matrix multiplication kernel
+__global__ void fractalCompression(int* A, int* B,int* C) {
+    int row = min((threadIdx.y)*4,124);
+    int col = min((threadIdx.x)*4,124);
+    
+}
+
+
+
+
+// Function to initialize matrices with random values
+
+// Function to compare results on CPU
+int main() {
+
+    clock_t start_time=clock();
+
+    string filename = "resizedimg.jpg";
+    int width = 128;
+    int height = 128;
+
+    resizeAndStoreImage(filename, width, height);
+    compress();
+
+
+    int* A, * B, * C; // Host matrices
+    int* d_A, * d_B, * d_C; // Device matrices
+
+    // Allocate host memory
+    A = (int*)malloc(N * N * sizeof(int));
+    B = (int*)malloc(64*64 * sizeof(int));
+    C = (int*)malloc(32*32*3 * sizeof(int));
+
+    for(int i=0;i<128*128;i++){
+      A[i]=img[i/128][i%128];
+    }
+    for(int i=0;i<64*64;i++){
+      B[i]=cmp[i/64][i%64];
+    }
+
+    // Allocate device memory
+    cudaMalloc((void**)&d_A, N * N * sizeof(int));
+    cudaMalloc((void**)&d_B, 64*64 * sizeof(int));
+    cudaMalloc((void**)&d_C, 32*32*3 * sizeof(int));
+
+    // Copy data from host to device
+    cudaMemcpy(d_A, A, N * N * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, B, 64*64 * sizeof(int), cudaMemcpyHostToDevice);
+
+    // Define grid and block dimensions
+    dim3 threadsPerBlock(32, 32);
+    dim3 blocksPerGrid(1,1);
+
+    // Create CUDA events for timing
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    // Launch kernel
+    fractalCompression<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C);
+
+
+
+    // Copy result from device to host
+    cudaMemcpy(C, d_C, 32*32*3*sizeof(int), cudaMemcpyDeviceToHost);
+
+
+
+    // Free allocated memory
+    free(A);
+    free(B);
+    free(C);
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    clock_t end_time=clock();
+    double elapsed_time=double(end_time-start_time)/CLOCKS_PER_SEC;
+
+    printf("\nTime Taken: %f Seconds \n",elapsed_time);
+
+    printf("Contents of fractal file are: \n");
+
+    FILE *fp;
+    fp = fopen("fractalFile.txt", "w");
+
+
+    for(int i=0;i<32*32*3;i+=3){
+      //printf("Block No. %d Coordinates (%d,%d) orientation %d \n",i/3,C[i],C[i+1],C[i+2]);
+      fprintf(fp,"%d %d %d\n",C[i],C[i+1],C[i+2]);
+    }
+    fclose(fp);
+
+    printf("Data written to file successfully.\n");
+
+    return 0;
+}
